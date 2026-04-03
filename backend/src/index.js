@@ -23,7 +23,7 @@ app.use((req, _res, next) => {
 })
 
 // ===== Routes =====
-app.use('/api', todoRoutes)
+app.use('/', todoRoutes)
 
 // 404 handler
 app.use((_req, res) => {
