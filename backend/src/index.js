@@ -2,6 +2,7 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const todoRoutes = require('./routes/todoRoutes')
+const authRoutes = require('./routes/authRoutes')
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -15,33 +16,30 @@ app.use(cors({
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// ===== Request Logger =====
+// Logger
 app.use((req, _res, next) => {
-  const timestamp = new Date().toISOString()
-  console.log(`[${timestamp}] ${req.method} ${req.path}`)
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`)
   next()
 })
 
 // ===== Routes =====
-app.use('/', todoRoutes)
+app.use('/api/auth', authRoutes)
+app.use('/api', todoRoutes)
 
 // 404 handler
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: '🔍 Route not found' })
 })
 
-// Global error handler
+// Error handler
 app.use((err, _req, res, _next) => {
-  console.error('❌ Error:', err.message)
+  console.error('❌ Error Server:', err.message)
   res.status(500).json({ success: false, message: '💥 Internal server error' })
 })
 
-// ===== Start Server =====
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`\n🚀 Server running → http://localhost:${PORT}`)
-    console.log(`📋 Todos API  → http://localhost:${PORT}/api/todos`)
-    console.log(`💚 Health     → http://localhost:${PORT}/api/health\n`)
+    console.log(`🚀 API Auth & Todos active sur http://localhost:${PORT}`)
   })
 }
 

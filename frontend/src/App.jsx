@@ -3,8 +3,9 @@ import axios from 'axios'
 import StatCard from './components/StatCard'
 import TodoItem from './components/TodoItem'
 import TodoForm from './components/TodoForm'
+import Login from './components/Login'
+import Signup from './components/Signup'
 
-const API = '/api'
 const FILTERS = ['all', 'active', 'completed']
 const PRIORITIES = ['high', 'medium', 'low']
 
@@ -12,6 +13,12 @@ const formatDate = (iso) =>
   new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
 
 export default function App() {
+  // Auth state
+  const [token, setToken] = useState(localStorage.getItem('token') || '')
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')) || null)
+  const [authView, setAuthView] = useState('login') // 'login' or 'signup'
+
+  // App state
   const [todos, setTodos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -21,24 +28,51 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false)
   const [editId, setEditId] = useState(null)
   const [editValue, setEditValue] = useState('')
-  const [apiOnline, setApiOnline] = useState(false)
+
+  // Configure axios with token
+  if (token) {
+    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+  }
+
+  // ===== Actions Auth =====
+  const handleLogin = (newToken, newUser) => {
+    localStorage.setItem('token', newToken)
+    localStorage.setItem('user', JSON.stringify(newUser))
+    setToken(newToken)
+    setUser(newUser)
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    setToken('')
+    setUser(null)
+    setTodos([])
+    setAuthView('login')
+  }
 
   // ===== Fetch todos =====
   const fetchTodos = useCallback(async () => {
+    if (!token) return
+    setLoading(true)
     try {
-      const res = await axios.get(`${API}/todos`)
+      const res = await axios.get('/api/todos')
       setTodos(res.data.data)
-      setApiOnline(true)
       setError('')
-    } catch {
-      setError('❌ Backend non connecté. Lancez : cd backend && npm run dev')
-      setApiOnline(false)
+    } catch (err) {
+      if (err.response?.status === 401) {
+        handleLogout()
+      } else {
+        setError('❌ Erreur de connexion au serveur')
+      }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [token])
 
-  useEffect(() => { fetchTodos() }, [fetchTodos])
+  useEffect(() => {
+    if (token) fetchTodos()
+  }, [token, fetchTodos])
 
   // ===== Add todo =====
   const handleAdd = async (e) => {
@@ -46,7 +80,7 @@ export default function App() {
     if (!newTitle.trim() || submitting) return
     setSubmitting(true)
     try {
-      const res = await axios.post(`${API}/todos`, { title: newTitle.trim(), priority: newPriority })
+      const res = await axios.post('/api/todos', { title: newTitle.trim(), priority: newPriority })
       setTodos(prev => [res.data.data, ...prev])
       setNewTitle('')
     } catch {
@@ -63,9 +97,9 @@ export default function App() {
     )
     setTodos(optimistic)
     try {
-      await axios.put(`${API}/todos/${todo.id}`, { completed: !todo.completed })
+      await axios.put(`/api/todos/${todo.id}`, { completed: !todo.completed })
     } catch {
-      setTodos(todos) // revert
+      setTodos(todos)
     }
   }
 
@@ -73,22 +107,19 @@ export default function App() {
   const handleDelete = async (id) => {
     setTodos(prev => prev.filter(t => t.id !== id))
     try {
-      await axios.delete(`${API}/todos/${id}`)
+      await axios.delete(`/api/todos/${id}`)
     } catch {
-      await fetchTodos() // revert on error
+      fetchTodos()
     }
   }
 
   // ===== Edit todo =====
   const startEdit = (todo) => { setEditId(todo.id); setEditValue(todo.title) }
-
   const saveEdit = async (id) => {
     if (!editValue.trim()) return
     try {
-      const res = await axios.put(`${API}/todos/${id}`, { title: editValue.trim() })
-      setTodos(prev => prev.map(t => t.id === id ? res.data.data : t))
-    } catch {
-      setError('❌ Impossible de modifier la tâche')
+      await axios.put(`/api/todos/${id}`, { title: editValue.trim() })
+      setTodos(prev => prev.map(t => t.id === id ? { ...t, title: editValue.trim() } : t))
     } finally {
       setEditId(null)
     }
@@ -97,20 +128,37 @@ export default function App() {
   // ===== Clear completed =====
   const clearCompleted = async () => {
     try {
-      await axios.delete(`${API}/todos`)
+      await axios.delete('/api/todos')
       setTodos(prev => prev.filter(t => !t.completed))
     } catch {
-      setError('❌ Impossible de supprimer les tâches terminées')
+      setError('❌ Impossible de supprimer')
     }
   }
 
-  // ===== Stats =====
+  // ===== Render Logic =====
+  if (!token) {
+    return (
+      <div className="app">
+        <div className="bg-orbs"><div className="orb orb-1" /><div className="orb orb-2" /></div>
+        <header className="header">
+          <div className="logo"><div className="logo-icon">📋</div><span className="logo-text">TodoApp</span></div>
+        </header>
+        <div className="auth-container">
+          {authView === 'login' ? (
+            <Login onLogin={handleLogin} onSwitchToSignup={() => setAuthView('signup')} />
+          ) : (
+            <Signup onSignupSuccess={() => setAuthView('login')} onSwitchToLogin={() => setAuthView('login')} />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Stats
   const total = todos.length
   const completedCount = todos.filter(t => t.completed).length
   const activeCount = total - completedCount
   const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0
-
-  // ===== Filtered list =====
   const filtered = todos.filter(t => {
     if (filter === 'active') return !t.completed
     if (filter === 'completed') return t.completed
@@ -119,49 +167,30 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Background */}
-      <div className="bg-orbs" aria-hidden="true">
-        <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
-      </div>
-
-      {/* Header */}
+      <div className="bg-orbs"><div className="orb orb-1" /><div className="orb orb-2" /></div>
+      
       <header className="header">
-        <div className="logo">
-          <div className="logo-icon">📋</div>
-          <span className="logo-text">TodoApp</span>
-        </div>
+        <div className="logo"><div className="logo-icon">📋</div><span className="logo-text">TodoApp</span></div>
         <div className="header-right">
-          <div className="status-badge">
-            <span className="status-dot" style={{ background: apiOnline ? 'var(--success)' : 'var(--error)' }} />
-            {apiOnline ? 'API connectée' : 'API hors ligne'}
-          </div>
+          <span className="user-email">{user?.email}</span>
+          <button className="btn-secondary" onClick={handleLogout} style={{ padding: '6px 12px' }}>Déconnexion</button>
         </div>
       </header>
 
-      {/* Main */}
       <main className="main">
-        {/* Stats */}
-        <div className="stats-row" role="region" aria-label="Statistiques">
+        <div className="stats-row">
           <StatCard label="Total" value={total} colorClass="purple" />
           <StatCard label="En cours" value={activeCount} colorClass="cyan" />
           <StatCard label="Terminées" value={completedCount} colorClass="green" />
         </div>
 
-        {/* Progress */}
-        <div className="progress-wrap" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-          <div className="progress-header">
-            <span>Progression</span>
-            <span>{progress}%</span>
-          </div>
-          <div className="progress-bar-bg">
-            <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
-          </div>
+        <div className="progress-wrap">
+          <div className="progress-header"><span>Progression</span><span>{progress}%</span></div>
+          <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${progress}%` }} /></div>
         </div>
 
-        {/* Error */}
-        {error && <div className="error-bar" role="alert">{error}</div>}
+        {error && <div className="error-bar">{error}</div>}
 
-        {/* Add form */}
         <TodoForm
           onSubmit={handleAdd}
           newTitle={newTitle}
@@ -172,46 +201,25 @@ export default function App() {
           priorities={PRIORITIES}
         />
 
-        {/* Filters */}
-        <div className="filters" role="tablist" aria-label="Filtres">
+        <div className="filters">
           {FILTERS.map(f => (
-            <button
-              key={f}
-              id={`filter-${f}`}
-              role="tab"
-              aria-selected={filter === f}
-              className={`filter-btn ${filter === f ? 'active' : ''}`}
-              onClick={() => setFilter(f)}
-            >
+            <button key={f} className={`filter-btn ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
               {f === 'all' ? 'Toutes' : f === 'active' ? 'En cours' : 'Terminées'}
-              {f === 'all' && ` (${total})`}
-              {f === 'active' && ` (${activeCount})`}
-              {f === 'completed' && ` (${completedCount})`}
+              {` (${f === 'all' ? total : f === 'active' ? activeCount : completedCount})`}
             </button>
           ))}
-          {completedCount > 0 && (
-            <button id="btn-clear-completed" className="btn-clear filter-right" onClick={clearCompleted}>
-              🗑 Supprimer terminées
-            </button>
-          )}
+          {completedCount > 0 && <button className="btn-clear filter-right" onClick={clearCompleted}>🗑 Supprimer</button>}
         </div>
 
-        {/* Todo list */}
         {loading ? (
-          <div className="loading-dots" aria-label="Chargement">
-            <div className="dot" /><div className="dot" /><div className="dot" />
-          </div>
+          <div className="loading-dots"><div className="dot" /><div className="dot" /><div className="dot" /></div>
         ) : filtered.length === 0 ? (
-          <div className="empty-state" aria-live="polite">
-            <span className="empty-icon">
-              {filter === 'completed' ? '🎉' : filter === 'active' ? '✨' : '📋'}
-            </span>
-            {filter === 'completed' ? 'Aucune tâche terminée' :
-             filter === 'active' ? 'Aucune tâche en cours' :
-             'Ajoutez votre première tâche !'}
+          <div className="empty-state">
+            <span className="empty-icon">✨</span>
+            Ajoutez votre première tâche ! (Liste vide au démarrage)
           </div>
         ) : (
-          <ul className="todos-list" aria-label="Liste des tâches">
+          <ul className="todos-list">
             {filtered.map(todo => (
               <TodoItem
                 key={todo.id}
@@ -230,11 +238,6 @@ export default function App() {
           </ul>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="footer">
-        <p>Propulsé par <span>React</span> + <span>Node.js</span> · Déployé sur <span>Vercel</span></p>
-      </footer>
     </div>
   )
 }

@@ -1,79 +1,103 @@
-let todos = [
-  { id: '1', title: 'Configurer Vercel', completed: true, priority: 'high', createdAt: new Date().toISOString() },
-  { id: '2', title: 'Déployer le frontend React', completed: false, priority: 'high', createdAt: new Date().toISOString() },
-  { id: '3', title: 'Connecter le backend Express', completed: false, priority: 'medium', createdAt: new Date().toISOString() },
-  { id: '4', title: 'Ajouter Dependabot', completed: true, priority: 'low', createdAt: new Date().toISOString() },
-]
+const db = require('../bdd/db')
 
-const generateId = () => Date.now().toString(36) + Math.random().toString(36).slice(2)
-
-exports.getTodos = (_req, res) => {
-  res.json({
-    success: true,
-    count: todos.length,
-    data: todos,
+// GET all todos for a specific user
+exports.getTodos = (req, res) => {
+  const userId = req.user.id
+  db.all('SELECT * FROM todos WHERE userId = ? ORDER BY createdAt DESC', [userId], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ success: false, message: 'Erreur lors de la récupération des tâches' })
+    }
+    res.json({ success: true, count: rows.length, data: rows })
   })
 }
 
-exports.getTodo = (req, res) => {
-  const todo = todos.find(t => t.id === req.params.id)
-  if (!todo) {
-    return res.status(404).json({ success: false, message: 'Tâche introuvable' })
-  }
-  res.json({ success: true, data: todo })
-}
-
+// POST create todo
 exports.createTodo = (req, res) => {
   const { title, priority = 'medium' } = req.body
+  const userId = req.user.id
+
   if (!title || title.trim() === '') {
     return res.status(400).json({ success: false, message: 'Le titre est requis' })
   }
-  const newTodo = {
-    id: generateId(),
-    title: title.trim(),
-    completed: false,
-    priority,
-    createdAt: new Date().toISOString(),
-  }
-  todos.unshift(newTodo)
-  res.status(201).json({ success: true, data: newTodo })
+
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2)
+  const createdAt = new Date().toISOString()
+
+  db.run(
+    'INSERT INTO todos (id, title, completed, priority, createdAt, userId) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, title.trim(), 0, priority, createdAt, userId],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ success: false, message: 'Erreur lors de la création de la tâche' })
+      }
+      res.status(201).json({
+        success: true,
+        data: { id, title: title.trim(), completed: false, priority, createdAt, userId }
+      })
+    }
+  )
 }
 
+// PUT update todo
 exports.updateTodo = (req, res) => {
-  const index = todos.findIndex(t => t.id === req.params.id)
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: 'Tâche introuvable' })
+  const { id } = req.params
+  const userId = req.user.id
+  const updates = req.body
+
+  // On construit dynamiquement la requête de mise à jour
+  const fields = []
+  const values = []
+
+  if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title) }
+  if (updates.completed !== undefined) { fields.push('completed = ?'); values.push(updates.completed ? 1 : 0) }
+  if (updates.priority !== undefined) { fields.push('priority = ?'); values.push(updates.priority) }
+
+  if (fields.length === 0) {
+    return res.status(400).json({ success: false, message: 'Aucune donnée à mettre à jour' })
   }
-  todos[index] = {
-    ...todos[index],
-    ...req.body,
-    id: todos[index].id,
-    createdAt: todos[index].createdAt,
-    updatedAt: new Date().toISOString(),
-  }
-  res.json({ success: true, data: todos[index] })
+
+  values.push(id, userId)
+
+  db.run(
+    `UPDATE todos SET ${fields.join(', ')} WHERE id = ? AND userId = ?`,
+    values,
+    function (err) {
+      if (err || this.changes === 0) {
+        return res.status(404).json({ success: false, message: 'Tâche introuvable ou accès refusé' })
+      }
+      res.json({ success: true, message: 'Tâche mise à jour' })
+    }
+  )
 }
 
+// DELETE todo
 exports.deleteTodo = (req, res) => {
-  const index = todos.findIndex(t => t.id === req.params.id)
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: 'Tâche introuvable' })
-  }
-  todos.splice(index, 1)
-  res.json({ success: true, message: 'Tâche supprimée' })
+  const { id } = req.params
+  const userId = req.user.id
+
+  db.run('DELETE FROM todos WHERE id = ? AND userId = ?', [id, userId], function (err) {
+    if (err || this.changes === 0) {
+      return res.status(404).json({ success: false, message: 'Tâche introuvable' })
+    }
+    res.json({ success: true, message: 'Tâche supprimée' })
+  })
 }
 
-exports.clearCompleted = (_req, res) => {
-  todos = todos.filter(t => !t.completed)
-  res.json({ success: true, message: 'Tâches terminées supprimées', count: todos.length })
+// DELETE all completed
+exports.clearCompleted = (req, res) => {
+  const userId = req.user.id
+  db.run('DELETE FROM todos WHERE userId = ? AND completed = 1', [userId], function (err) {
+    if (err) {
+      return res.status(500).json({ success: false, message: 'Erreur lors de la suppression' })
+    }
+    res.json({ success: true, message: 'Tâches terminées supprimées' })
+  })
 }
 
+// Health check
 exports.getHealth = (_req, res) => {
   res.json({
     status: 'ok',
-    message: '✅ API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    todos: todos.length,
+    message: '✅ API is running with SQLite'
   })
 }

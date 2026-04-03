@@ -1,26 +1,16 @@
 const express = require('express')
 const router = express.Router()
 const todoController = require('../controllers/todoController')
+const authMiddleware = require('../middleware/authMiddleware')
 
-// Health check
+// Health check (Open)
 router.get('/health', todoController.getHealth)
 
-// GET all todos
-router.get('/todos', todoController.getTodos)
-
-// GET single todo
-router.get('/todos/:id', todoController.getTodo)
-
-// POST create todo
-router.post('/todos', todoController.createTodo)
-
-// PUT update todo
-router.put('/todos/:id', todoController.updateTodo)
-
-// DELETE todo
-router.delete('/todos/:id', todoController.deleteTodo)
-
-// DELETE all completed
-router.delete('/todos', todoController.clearCompleted)
+// CRUD Tâches (Protégé par JWT)
+router.get('/todos', authMiddleware, todoController.getTodos)
+router.post('/todos', authMiddleware, todoController.createTodo)
+router.put('/todos/:id', authMiddleware, todoController.updateTodo)
+router.delete('/todos/:id', authMiddleware, todoController.deleteTodo)
+router.delete('/todos', authMiddleware, todoController.clearCompleted)
 
 module.exports = router
