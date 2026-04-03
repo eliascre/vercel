@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import StatCard from './components/StatCard'
+import TodoItem from './components/TodoItem'
+import TodoForm from './components/TodoForm'
 
 const API = '/api'
 const FILTERS = ['all', 'active', 'completed']
@@ -103,9 +106,9 @@ export default function App() {
 
   // ===== Stats =====
   const total = todos.length
-  const completed = todos.filter(t => t.completed).length
-  const active = total - completed
-  const progress = total > 0 ? Math.round((completed / total) * 100) : 0
+  const completedCount = todos.filter(t => t.completed).length
+  const activeCount = total - completedCount
+  const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0
 
   // ===== Filtered list =====
   const filtered = todos.filter(t => {
@@ -137,21 +140,11 @@ export default function App() {
 
       {/* Main */}
       <main className="main">
-
         {/* Stats */}
         <div className="stats-row" role="region" aria-label="Statistiques">
-          <div className="stat-card">
-            <span className="stat-label">Total</span>
-            <span className="stat-value purple">{total}</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">En cours</span>
-            <span className="stat-value cyan">{active}</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Terminées</span>
-            <span className="stat-value green">{completed}</span>
-          </div>
+          <StatCard label="Total" value={total} colorClass="purple" />
+          <StatCard label="En cours" value={activeCount} colorClass="cyan" />
+          <StatCard label="Terminées" value={completedCount} colorClass="green" />
         </div>
 
         {/* Progress */}
@@ -169,31 +162,15 @@ export default function App() {
         {error && <div className="error-bar" role="alert">{error}</div>}
 
         {/* Add form */}
-        <form className="add-form" onSubmit={handleAdd} aria-label="Ajouter une tâche">
-          <input
-            id="new-todo-input"
-            className="add-input"
-            type="text"
-            placeholder="Nouvelle tâche..."
-            value={newTitle}
-            onChange={e => setNewTitle(e.target.value)}
-            aria-label="Titre de la tâche"
-          />
-          <select
-            id="priority-select"
-            className="priority-select"
-            value={newPriority}
-            onChange={e => setNewPriority(e.target.value)}
-            aria-label="Priorité"
-          >
-            {PRIORITIES.map(p => (
-              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-            ))}
-          </select>
-          <button id="btn-add" className="btn-add" type="submit" disabled={!newTitle.trim() || submitting}>
-            {submitting ? '...' : '+ Ajouter'}
-          </button>
-        </form>
+        <TodoForm
+          onSubmit={handleAdd}
+          newTitle={newTitle}
+          setNewTitle={setNewTitle}
+          newPriority={newPriority}
+          setNewPriority={setNewPriority}
+          submitting={submitting}
+          priorities={PRIORITIES}
+        />
 
         {/* Filters */}
         <div className="filters" role="tablist" aria-label="Filtres">
@@ -208,11 +185,11 @@ export default function App() {
             >
               {f === 'all' ? 'Toutes' : f === 'active' ? 'En cours' : 'Terminées'}
               {f === 'all' && ` (${total})`}
-              {f === 'active' && ` (${active})`}
-              {f === 'completed' && ` (${completed})`}
+              {f === 'active' && ` (${activeCount})`}
+              {f === 'completed' && ` (${completedCount})`}
             </button>
           ))}
-          {completed > 0 && (
+          {completedCount > 0 && (
             <button id="btn-clear-completed" className="btn-clear filter-right" onClick={clearCompleted}>
               🗑 Supprimer terminées
             </button>
@@ -236,56 +213,19 @@ export default function App() {
         ) : (
           <ul className="todos-list" aria-label="Liste des tâches">
             {filtered.map(todo => (
-              <li
+              <TodoItem
                 key={todo.id}
-                id={`todo-${todo.id}`}
-                className={`todo-item ${todo.completed ? 'completed' : ''}`}
-              >
-                {/* Checkbox */}
-                <button
-                  className={`todo-check ${todo.completed ? 'checked' : ''}`}
-                  onClick={() => handleToggle(todo)}
-                  aria-label={todo.completed ? 'Marquer comme non terminé' : 'Marquer comme terminé'}
-                />
-
-                {/* Content */}
-                <div className="todo-content">
-                  {editId === todo.id ? (
-                    <input
-                      className="todo-edit-input"
-                      value={editValue}
-                      onChange={e => setEditValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') saveEdit(todo.id)
-                        if (e.key === 'Escape') setEditId(null)
-                      }}
-                      autoFocus
-                      aria-label="Modifier la tâche"
-                    />
-                  ) : (
-                    <div className="todo-title">{todo.title}</div>
-                  )}
-                  <div className="todo-meta">
-                    <span className={`priority-badge priority-${todo.priority}`}>{todo.priority}</span>
-                    <span className="todo-date">{formatDate(todo.createdAt)}</span>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="todo-actions">
-                  {editId === todo.id ? (
-                    <>
-                      <button id={`save-${todo.id}`} className="btn-icon save" onClick={() => saveEdit(todo.id)} title="Sauvegarder">✓</button>
-                      <button id={`cancel-${todo.id}`} className="btn-icon" onClick={() => setEditId(null)} title="Annuler">✕</button>
-                    </>
-                  ) : (
-                    <>
-                      <button id={`edit-${todo.id}`} className="btn-icon" onClick={() => startEdit(todo)} title="Modifier">✏️</button>
-                      <button id={`delete-${todo.id}`} className="btn-icon danger" onClick={() => handleDelete(todo.id)} title="Supprimer">🗑</button>
-                    </>
-                  )}
-                </div>
-              </li>
+                todo={todo}
+                onToggle={handleToggle}
+                onDelete={handleDelete}
+                onEdit={startEdit}
+                editId={editId}
+                editValue={editValue}
+                setEditValue={setEditValue}
+                onSave={saveEdit}
+                setEditId={setEditId}
+                formatDate={formatDate}
+              />
             ))}
           </ul>
         )}
