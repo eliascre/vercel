@@ -1,26 +1,30 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import Header from './components/Header'
 import StatCard from './components/StatCard'
 import TodoItem from './components/TodoItem'
 import TodoForm from './components/TodoForm'
 import Login from './components/Login'
 import Signup from './components/Signup'
+import translations from './utils/translations'
 
 const FILTERS = ['all', 'active', 'completed']
 const PRIORITIES = ['high', 'medium', 'low']
 
-const formatDate = (iso) =>
-  new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
-
 export default function App() {
-  // Auth state
+  // --- Lang State ---
+  const [lang, setLang] = useState(localStorage.getItem('lang') || 'fr')
+  const t = translations[lang]
+
+  // --- Auth State ---
   const [token, setToken] = useState(localStorage.getItem('token') || '')
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')) || null)
-  const [authView, setAuthView] = useState('login') // 'login' or 'signup'
+  const [isGuest, setIsGuest] = useState(localStorage.getItem('isGuest') === 'true')
+  const [authView, setAuthView] = useState('login')
 
-  // App state
+  // --- Data State ---
   const [todos, setTodos] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('all')
   const [newTitle, setNewTitle] = useState('')
@@ -29,13 +33,43 @@ export default function App() {
   const [editId, setEditId] = useState(null)
   const [editValue, setEditValue] = useState('')
 
-  // Configure axios with token
+  // Configure axios
   if (token) {
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
   }
 
-  // ===== Actions Auth =====
-  const handleLogin = (newToken, newUser) => {
+  // --- Helpers ---
+  const saveGuestTodos = (newTodos) => {
+    localStorage.setItem('guest_todos', JSON.stringify(newTodos))
+    setTodos(newTodos)
+  }
+
+  const syncGuestTodos = async (newToken) => {
+    const localTodos = JSON.parse(localStorage.getItem('guest_todos') || '[]')
+    if (localTodos.length === 0) return
+
+    console.log(t.sync_message)
+    try {
+      for (const todo of localTodos) {
+        await axios.post('/api/todos', { 
+          title: todo.title, 
+          priority: todo.priority 
+        }, { headers: { Authorization: `Bearer ${newToken}` } })
+      }
+      localStorage.removeItem('guest_todos')
+    } catch (err) {
+      console.error('Sync failed', err)
+    }
+  }
+
+  // --- Auth Actions ---
+  const handleLogin = async (newToken, newUser) => {
+    // Sync if guest had data
+    if (isGuest) {
+      await syncGuestTodos(newToken)
+      setIsGuest(false)
+      localStorage.removeItem('isGuest')
+    }
     localStorage.setItem('token', newToken)
     localStorage.setItem('user', JSON.stringify(newUser))
     setToken(newToken)
@@ -45,66 +79,101 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('isGuest')
+    localStorage.removeItem('guest_todos')
     setToken('')
     setUser(null)
+    setIsGuest(false)
     setTodos([])
     setAuthView('login')
   }
 
-  // ===== Fetch todos =====
+  const handleGuestMode = () => {
+    setIsGuest(true)
+    localStorage.setItem('isGuest', 'true')
+    const localTodos = JSON.parse(localStorage.getItem('guest_todos') || '[]')
+    setTodos(localTodos)
+  }
+
+  const changeLang = (newLang) => {
+    setLang(newLang)
+    localStorage.setItem('lang', newLang)
+  }
+
+  // --- Data Actions ---
   const fetchTodos = useCallback(async () => {
+    if (isGuest) {
+      const localTodos = JSON.parse(localStorage.getItem('guest_todos') || '[]')
+      setTodos(localTodos)
+      return
+    }
     if (!token) return
+
     setLoading(true)
     try {
       const res = await axios.get('/api/todos')
       setTodos(res.data.data)
       setError('')
     } catch (err) {
-      if (err.response?.status === 401) {
-        handleLogout()
-      } else {
-        setError('❌ Erreur de connexion au serveur')
-      }
+      if (err.response?.status === 401) handleLogout()
+      else setError(t.error_auth)
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [token, isGuest, t.error_auth])
 
   useEffect(() => {
-    if (token) fetchTodos()
-  }, [token, fetchTodos])
+    fetchTodos()
+  }, [fetchTodos])
 
-  // ===== Add todo =====
   const handleAdd = async (e) => {
     e.preventDefault()
     if (!newTitle.trim() || submitting) return
+    
+    if (isGuest) {
+      const newTodo = {
+        id: Date.now().toString(),
+        title: newTitle.trim(),
+        completed: false,
+        priority: newPriority,
+        createdAt: new Date().toISOString()
+      }
+      saveGuestTodos([newTodo, ...todos])
+      setNewTitle('')
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await axios.post('/api/todos', { title: newTitle.trim(), priority: newPriority })
       setTodos(prev => [res.data.data, ...prev])
       setNewTitle('')
     } catch {
-      setError('❌ Impossible d\'ajouter la tâche')
+      setError(t.error_add)
     } finally {
       setSubmitting(false)
     }
   }
 
-  // ===== Toggle completed =====
   const handleToggle = async (todo) => {
-    const optimistic = todos.map(t =>
-      t.id === todo.id ? { ...t, completed: !t.completed } : t
-    )
-    setTodos(optimistic)
+    const updated = todos.map(t => t.id === todo.id ? { ...t, completed: !t.completed } : t)
+    if (isGuest) {
+      saveGuestTodos(updated)
+      return
+    }
+    setTodos(updated)
     try {
       await axios.put(`/api/todos/${todo.id}`, { completed: !todo.completed })
     } catch {
-      setTodos(todos)
+      fetchTodos()
     }
   }
 
-  // ===== Delete todo =====
   const handleDelete = async (id) => {
+    if (isGuest) {
+      saveGuestTodos(todos.filter(t => t.id !== id))
+      return
+    }
     setTodos(prev => prev.filter(t => t.id !== id))
     try {
       await axios.delete(`/api/todos/${id}`)
@@ -113,52 +182,42 @@ export default function App() {
     }
   }
 
-  // ===== Edit todo =====
-  const startEdit = (todo) => { setEditId(todo.id); setEditValue(todo.title) }
-  const saveEdit = async (id) => {
-    if (!editValue.trim()) return
-    try {
-      await axios.put(`/api/todos/${id}`, { title: editValue.trim() })
-      setTodos(prev => prev.map(t => t.id === id ? { ...t, title: editValue.trim() } : t))
-    } finally {
-      setEditId(null)
-    }
+  const clearCompletedGuest = () => {
+    saveGuestTodos(todos.filter(t => !t.completed))
   }
 
-  // ===== Clear completed =====
-  const clearCompleted = async () => {
-    try {
-      await axios.delete('/api/todos')
-      setTodos(prev => prev.filter(t => !t.completed))
-    } catch {
-      setError('❌ Impossible de supprimer')
-    }
-  }
-
-  // ===== Render Logic =====
-  if (!token) {
+  // --- Auth View ---
+  if (!token && !isGuest) {
     return (
       <div className="app">
         <div className="bg-orbs"><div className="orb orb-1" /><div className="orb orb-2" /></div>
-        <header className="header">
-          <div className="logo"><div className="logo-icon">📋</div><span className="logo-text">TodoApp</span></div>
-        </header>
+        <Header lang={lang} setLang={changeLang} />
         <div className="auth-container">
           {authView === 'login' ? (
-            <Login onLogin={handleLogin} onSwitchToSignup={() => setAuthView('signup')} />
+            <Login 
+              lang={lang} 
+              onLogin={handleLogin} 
+              onSwitchToSignup={() => setAuthView('signup')} 
+              onGuestMode={handleGuestMode}
+            />
           ) : (
-            <Signup onSignupSuccess={() => setAuthView('login')} onSwitchToLogin={() => setAuthView('login')} />
+            <Signup 
+              lang={lang} 
+              onSignupSuccess={() => setAuthView('login')} 
+              onSwitchToLogin={() => setAuthView('login')} 
+            />
           )}
         </div>
       </div>
     )
   }
 
-  // Stats
+  // Statistics
   const total = todos.length
   const completedCount = todos.filter(t => t.completed).length
   const activeCount = total - completedCount
   const progress = total > 0 ? Math.round((completedCount / total) * 100) : 0
+  
   const filtered = todos.filter(t => {
     if (filter === 'active') return !t.completed
     if (filter === 'completed') return t.completed
@@ -169,23 +228,23 @@ export default function App() {
     <div className="app">
       <div className="bg-orbs"><div className="orb orb-1" /><div className="orb orb-2" /></div>
       
-      <header className="header">
-        <div className="logo"><div className="logo-icon">📋</div><span className="logo-text">TodoApp</span></div>
-        <div className="header-right">
-          <span className="user-email">{user?.email}</span>
-          <button className="btn-secondary" onClick={handleLogout} style={{ padding: '6px 12px' }}>Déconnexion</button>
-        </div>
-      </header>
+      <Header 
+        lang={lang} 
+        setLang={changeLang} 
+        user={user} 
+        isGuest={isGuest} 
+        onLogout={handleLogout} 
+      />
 
       <main className="main">
         <div className="stats-row">
-          <StatCard label="Total" value={total} colorClass="purple" />
-          <StatCard label="En cours" value={activeCount} colorClass="cyan" />
-          <StatCard label="Terminées" value={completedCount} colorClass="green" />
+          <StatCard label={t.total} value={total} colorClass="purple" />
+          <StatCard label={t.active} value={activeCount} colorClass="cyan" />
+          <StatCard label={t.completed} value={completedCount} colorClass="green" />
         </div>
 
         <div className="progress-wrap">
-          <div className="progress-header"><span>Progression</span><span>{progress}%</span></div>
+          <div className="progress-header"><span>{t.progress}</span><span>{progress}%</span></div>
           <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${progress}%` }} /></div>
         </div>
 
@@ -199,16 +258,21 @@ export default function App() {
           setNewPriority={setNewPriority}
           submitting={submitting}
           priorities={PRIORITIES}
+          t={t}
         />
 
         <div className="filters">
           {FILTERS.map(f => (
             <button key={f} className={`filter-btn ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
-              {f === 'all' ? 'Toutes' : f === 'active' ? 'En cours' : 'Terminées'}
+              {t[`filter_${f}`]}
               {` (${f === 'all' ? total : f === 'active' ? activeCount : completedCount})`}
             </button>
           ))}
-          {completedCount > 0 && <button className="btn-clear filter-right" onClick={clearCompleted}>🗑 Supprimer</button>}
+          {completedCount > 0 && (
+            <button className="btn-clear filter-right" onClick={isGuest ? clearCompletedGuest : () => axios.delete('/api/todos').then(fetchTodos)}>
+              🗑 {t.delete_all}
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -216,7 +280,7 @@ export default function App() {
         ) : filtered.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon">✨</span>
-            Ajoutez votre première tâche ! (Liste vide au démarrage)
+            {t.empty_state}
           </div>
         ) : (
           <ul className="todos-list">
@@ -226,13 +290,23 @@ export default function App() {
                 todo={todo}
                 onToggle={handleToggle}
                 onDelete={handleDelete}
-                onEdit={startEdit}
+                onEdit={(todo) => {setEditId(todo.id); setEditValue(todo.title)}}
                 editId={editId}
                 editValue={editValue}
                 setEditValue={setEditValue}
-                onSave={saveEdit}
+                onSave={async (id) => {
+                  if (isGuest) {
+                    saveGuestTodos(todos.map(t => t.id === id ? { ...t, title: editValue } : t))
+                    setEditId(null)
+                  } else {
+                    await axios.put(`/api/todos/${id}`, { title: editValue })
+                    setTodos(prev => prev.map(t => t.id === id ? { ...t, title: editValue } : t))
+                    setEditId(null)
+                  }
+                }}
                 setEditId={setEditId}
-                formatDate={formatDate}
+                formatDate={(iso) => new Date(iso).toLocaleDateString(lang === 'fr' ? 'fr-FR' : 'en-US')}
+                t={t}
               />
             ))}
           </ul>

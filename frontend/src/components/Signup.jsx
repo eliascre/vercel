@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import axios from 'axios'
+import translations from '../utils/translations'
 
-const Signup = ({ onSignupSuccess, onSwitchToLogin }) => {
+const Signup = ({ lang, onSignupSuccess, onSwitchToLogin }) => {
+  const t = translations[lang]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -11,7 +13,7 @@ const Signup = ({ onSignupSuccess, onSwitchToLogin }) => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (password !== confirmPassword) {
-      return setError('Les mots de passe ne correspondent pas')
+      return setError(lang === 'fr' ? 'Les mots de passe ne correspondent pas' : 'Passwords do not match')
     }
     setLoading(true)
     setError('')
@@ -19,7 +21,7 @@ const Signup = ({ onSignupSuccess, onSwitchToLogin }) => {
       await axios.post('/api/auth/signup', { email, password })
       onSignupSuccess()
     } catch (err) {
-      setError(err.response?.data?.message || 'Erreur lors de l’inscription')
+      setError(err.response?.data?.message || t.error_add)
     } finally {
       setLoading(false)
     }
@@ -28,55 +30,52 @@ const Signup = ({ onSignupSuccess, onSwitchToLogin }) => {
   return (
     <div className="auth-card">
       <div className="auth-header">
-        <h2>Créer un compte</h2>
-        <p>Commencez dès maintenant !</p>
+        <h2>{t.signup}</h2>
+        <p>{t.start_now}</p>
       </div>
 
       {error && <div className="error-bar">{error}</div>}
 
       <form onSubmit={handleSubmit} className="auth-form">
         <div className="form-group">
-          <label>Email</label>
+          <label>{t.email}</label>
           <input
             type="email"
             placeholder="votre@email.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            autoComplete="email"
           />
         </div>
         <div className="form-group">
-          <label>Mot de passe</label>
+          <label>{t.password}</label>
           <input
             type="password"
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            autoComplete="new-password"
           />
         </div>
         <div className="form-group">
-          <label>Confirmer le mot de passe</label>
+          <label>{t.confirm_password}</label>
           <input
             type="password"
             placeholder="••••••••"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
-            autoComplete="new-password"
           />
         </div>
         <button type="submit" className="btn-primary auth-btn" disabled={loading}>
-          {loading ? 'Chargement...' : 'S’inscrire'}
+          {loading ? t.loading : t.submit_signup}
         </button>
       </form>
 
       <p className="auth-footer">
-        Déjà un compte ?{' '}
+        {t.have_account}{' '}
         <button className="link-btn" onClick={onSwitchToLogin}>
-          Se connecter
+          {t.login}
         </button>
       </p>
     </div>

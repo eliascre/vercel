@@ -8,14 +8,15 @@ const TodoItem = ({
   setEditValue,
   onSave,
   setEditId,
-  formatDate
+  formatDate,
+  t
 }) => (
   <li id={`todo-${todo.id}`} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
     {/* Checkbox */}
     <button
       className={`todo-check ${todo.completed ? 'checked' : ''}`}
       onClick={() => onToggle(todo)}
-      aria-label={todo.completed ? 'Marquer comme non terminé' : 'Marquer comme terminé'}
+      aria-label={todo.completed ? t.completed : t.active}
     />
 
     {/* Content */}
@@ -30,13 +31,14 @@ const TodoItem = ({
             if (e.key === 'Escape') setEditId(null)
           }}
           autoFocus
-          aria-label="Modifier la tâche"
         />
       ) : (
         <div className="todo-title">{todo.title}</div>
       )}
       <div className="todo-meta">
-        <span className={`priority-badge priority-${todo.priority}`}>{todo.priority}</span>
+        <span className={`priority-badge priority-${todo.priority}`}>
+          {t[`priority_${todo.priority}`]}
+        </span>
         <span className="todo-date">{formatDate(todo.createdAt)}</span>
       </div>
     </div>
@@ -45,13 +47,13 @@ const TodoItem = ({
     <div className="todo-actions">
       {editId === todo.id ? (
         <>
-          <button id={`save-${todo.id}`} className="btn-icon save" onClick={() => onSave(todo.id)} title="Sauvegarder">✓</button>
-          <button id={`cancel-${todo.id}`} className="btn-icon" onClick={() => setEditId(null)} title="Annuler">✕</button>
+          <button className="btn-icon save" onClick={() => onSave(todo.id)}>✓</button>
+          <button className="btn-icon" onClick={() => setEditId(null)}>✕</button>
         </>
       ) : (
         <>
-          <button id={`edit-${todo.id}`} className="btn-icon" onClick={() => onEdit(todo)} title="Modifier">✏️</button>
-          <button id={`delete-${todo.id}`} className="btn-icon danger" onClick={() => onDelete(todo.id)} title="Supprimer">🗑</button>
+          <button className="btn-icon" onClick={() => onEdit(todo)}>✏️</button>
+          <button className="btn-icon danger" onClick={() => onDelete(todo.id)}>🗑</button>
         </>
       )}
     </div>

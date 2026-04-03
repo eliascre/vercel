@@ -5,17 +5,18 @@ const TodoForm = ({
   newPriority,
   setNewPriority,
   submitting,
-  priorities
+  priorities,
+  t
 }) => (
-  <form className="add-form" onSubmit={onSubmit} aria-label="Ajouter une tâche">
+  <form className="add-form" onSubmit={onSubmit} aria-label={t.add_placeholder}>
     <input
       id="new-todo-input"
       className="add-input"
       type="text"
-      placeholder="Nouvelle tâche..."
+      placeholder={t.add_placeholder}
       value={newTitle}
       onChange={e => setNewTitle(e.target.value)}
-      aria-label="Titre de la tâche"
+      aria-label={t.title}
     />
     <select
       id="priority-select"
@@ -25,11 +26,11 @@ const TodoForm = ({
       aria-label="Priorité"
     >
       {priorities.map(p => (
-        <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+        <option key={p} value={p}>{t[`priority_${p}`]}</option>
       ))}
     </select>
     <button id="btn-add" className="btn-add" type="submit" disabled={!newTitle.trim() || submitting}>
-      {submitting ? '...' : '+ Ajouter'}
+      {submitting ? '...' : `+ ${lang === 'fr' ? 'Ajouter' : 'Add'}`}
     </button>
   </form>
 )
